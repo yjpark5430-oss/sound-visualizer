@@ -9,7 +9,7 @@ let started = false;
 let useHSB = true; // C키로 색상모드 전환
 let rot = 0;
 
-// v7: 스무딩 + 가시성 유지 + 저역(bass) 바닥 채움 사각형 + Space 토글
+// v8: bass 사각형 수정
 let smoothLevel = 0;
 
 function preload() {
@@ -68,13 +68,13 @@ function draw() {
   // 두께 조절
   const strokeW = 2 + boost * 2;
 
-  // 주파수 에너지를 가져온다
+  
   const bass = fft.getEnergy("bass");
   const treble = fft.getEnergy("treble");
   const bassBoost = constrain(map(bass, 0, 255, 0, 1), 0, 1);
 
   // 0: rect (low 음역대 반응, 화면 아래부터 차오름)
-  // 레이어 가장 밑에서 그려져서 다른 도형들을 덮지 않게 한다
+  
   drawBassFillRect(bassBoost);
 
   // 위치 흔들림 + 회전 속도 변화
@@ -197,19 +197,21 @@ function setStrokeByBoost(boost) {
 
 function drawBassFillRect(bassBoost) {
   // low 음역대 커지면 > 화면 아래에서 위로 사각형이 차오름
-  const fillH = bassBoost * (height * 0.5); //최대 높이는 화면 절반으로 제한
+  // 최대 높이 화면 전체, 항상 무채색, 낮은 불투명도
+  const fillH = bassBoost * height;
 
-  if (useHSB) {
-    const h = (frameCount * 0.6 + 220) % 360;
-    const a = 18 + bassBoost * 45;
-    fill(h, 70, 90, a);
-  } else {
-    fill(60, 160, 255, 60 + bassBoost * 90);
-  }
+ 
+  push();
+  colorMode(RGB, 255, 255, 255, 255);
 
+ 
+  const a = 10 + bassBoost * 25;
   noStroke();
+  fill(220, 220, 220, a);
+
   rectMode(CORNER);
   rect(0, height - fillH, width, fillH);
+  pop();
 }
 
 function drawCenter(msg) {
