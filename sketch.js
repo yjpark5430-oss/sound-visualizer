@@ -9,7 +9,7 @@ let started = false;
 let useHSB = true; // C키로 색상모드 전환
 let rot = 0;
 
-// v5 추가: 스무딩(튀는 반응 완화) + 선/사각형 가시성 강화
+// v6: 스무딩 + 가시성 유지 + 저역(bass) 삼각형 + Space 토글
 let smoothLevel = 0;
 
 function preload() {
@@ -52,21 +52,26 @@ function draw() {
   }
 
   if (!started) {
-    drawCenter("클릭하면 재생\nC: 색상 모드 전환\n클릭: 재생/일시정지");
+    drawCenter("클릭하면 재생\nC: 색상 모드 전환\n클릭/Space: 재생/일시정지");
     return;
   }
 
   // 음량 레벨 > 여러 속성에 반영
   const level = amp.getLevel();
 
-  // v5 추가: 스무딩으로 변화가 너무 튀지 않게 만든다
+  // 스무딩
   smoothLevel = lerp(smoothLevel, level, 0.12);
 
-  // v4에서 쓰던 0.12 감도 유지(조용한 음원에서도 반응 잘 나오게)
+  // 감도 설정
   const boost = constrain(map(smoothLevel, 0, 0.12, 0, 1), 0, 1);
 
-  // v5 추가: 선/사각형이 너무 약하지 않게 두께를 boost에 따라 조절
+  // 두께 조절
   const strokeW = 2 + boost * 2;
+
+  // 주파수 에너지를 가져온다
+  const bass = fft.getEnergy("bass");
+  const treble = fft.getEnergy("treble");
+  const bassBoost = constrain(map(bass, 0, 255, 0, 1), 0, 1);
 
   // 위치 흔들림 + 회전 속도 변화
   const wobble = boost * 28;
@@ -101,27 +106,21 @@ function draw() {
   setStrokeByBoost(boost);
   strokeWeight(strokeW);
 
-  // v5 추가: ring를 약간 안쪽으로, 선 길이를 더 길게 해서 가시성 강화
+  // 선이 더 눈에 띄도록
   const ring = 120 + boost * 90;
-
-  // v5 추가: 라인을 더 촘촘히 (i += 2 -> i += 1)
   for (let i = 0; i < spectrum.length; i += 1) {
     const a = map(i, 0, spectrum.length, 0, TWO_PI);
     const mag = spectrum[i] / 255;
-
-    // v5 추가: len 스케일 상향(선이 더 눈에 띄게)
     const len = ring + mag * (140 + boost * 260);
 
-    const x1 = cos(a) * ring;
-    const y1 = sin(a) * ring;
-    const x2 = cos(a) * len;
-    const y2 = sin(a) * len;
-
-    line(x1, y1, x2, y2);
+    line(cos(a) * ring, sin(a) * ring, cos(a) * len, sin(a) * len);
   }
   pop();
 
-  drawHUD(level);
+  // 4: triangle (low 음역대 반응)
+  drawBassTriangle(bassBoost);
+
+  drawHUD(level, bass, treble);
 }
 
 function mousePressed() {
@@ -136,8 +135,7 @@ function mousePressed() {
   }
 
   // 이후 클릭은 재생/일시정지 토글
-  if (soundFile.isPlaying()) soundFile.pause();
-  else soundFile.play();
+  togglePlayPause();
 }
 
 function keyPressed() {
@@ -145,6 +143,18 @@ function keyPressed() {
   if (key === "c" || key === "C") {
     useHSB = !useHSB;
   }
+
+  // 사용자 인터랙션: Space로 재생/일시정지 토글
+  if (key === " ") {
+    if (!started) return;
+    togglePlayPause();
+  }
+}
+
+function togglePlayPause() {
+  // 안전장치
+  if (soundFile.isPlaying()) soundFile.pause();
+  else soundFile.play();
 }
 
 function windowResized() {
@@ -173,7 +183,7 @@ function setFillByBoost(boost) {
 }
 
 function setStrokeByBoost(boost) {
-  // v5 추가: 선/사각형이 사라지지 않게 최소 알파를 조금 올린다
+  // 선/사각형의 최소 알파 확보
   if (useHSB) {
     const h = (frameCount * 0.8 + 120 + boost * 160) % 360;
     const a = 80 + boost * 20;
@@ -184,6 +194,32 @@ function setStrokeByBoost(boost) {
   }
 }
 
+function drawBassTriangle(bassBoost) {
+  // low 음역대 커지면 > 삼각형 커짐, 투명도 증가
+  if (useHSB) {
+    const h = (frameCount * 0.6 + 220) % 360;
+    const a = 25 + bassBoost * 60;
+    fill(h, 80, 95, a);
+  } else {
+    fill(255, 200, 120, 120 + bassBoost * 100);
+  }
+
+  noStroke();
+
+  const triW = 60 + bassBoost * 240;
+  const baseY = height - 60;
+  const peakY = baseY - (40 + bassBoost * 160);
+
+  triangle(
+    width / 2 - triW * 0.6,
+    baseY,
+    width / 2 + triW * 0.6,
+    baseY,
+    width / 2,
+    peakY
+  );
+}
+
 function drawCenter(msg) {
   fill(useHSB ? color(0, 0, 100, 90) : 255);
   noStroke();
@@ -192,7 +228,7 @@ function drawCenter(msg) {
   text(msg, width / 2, height / 2);
 }
 
-function drawHUD(level) {
+function drawHUD(level, bass, treble) {
   fill(useHSB ? color(0, 0, 100, 70) : 255);
   noStroke();
   textAlign(LEFT, TOP);
@@ -200,7 +236,7 @@ function drawHUD(level) {
 
   const status = soundFile.isPlaying() ? "PLAY" : "PAUSE";
   text(
-    `상태: ${status}\namp.getLevel(): ${level.toFixed(3)}\n클릭: 재생/일시정지\nC: 색상 모드 전환`,
+    `상태: ${status}\namp.getLevel(): ${level.toFixed(3)}\nbass: ${Math.round(bass)}  treble: ${Math.round(treble)}\n클릭/Space: 재생·일시정지\nC: 색상 모드 전환`,
     14,
     14
   );
