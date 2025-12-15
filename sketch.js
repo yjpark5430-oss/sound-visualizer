@@ -9,6 +9,9 @@ let started = false;
 let useHSB = true; // C키로 색상모드 전환
 let rot = 0;
 
+// v5 추가: 스무딩(튀는 반응 완화) + 선/사각형 가시성 강화
+let smoothLevel = 0;
+
 function preload() {
   // 사운드 파일 로드
   soundFormats("mp3", "ogg", "wav");
@@ -55,7 +58,15 @@ function draw() {
 
   // 음량 레벨 > 여러 속성에 반영
   const level = amp.getLevel();
-  const boost = constrain(map(level, 0, 0.25, 0, 1), 0, 1);
+
+  // v5 추가: 스무딩으로 변화가 너무 튀지 않게 만든다
+  smoothLevel = lerp(smoothLevel, level, 0.12);
+
+  // v4에서 쓰던 0.12 감도 유지(조용한 음원에서도 반응 잘 나오게)
+  const boost = constrain(map(smoothLevel, 0, 0.12, 0, 1), 0, 1);
+
+  // v5 추가: 선/사각형이 너무 약하지 않게 두께를 boost에 따라 조절
+  const strokeW = 2 + boost * 2;
 
   // 위치 흔들림 + 회전 속도 변화
   const wobble = boost * 28;
@@ -75,7 +86,7 @@ function draw() {
   translate(width / 2, height / 2);
   rotate(rot);
   setStrokeByBoost(boost);
-  strokeWeight(2);
+  strokeWeight(strokeW + 0.5);
   noFill();
   rectMode(CENTER);
   const frameSize = 180 + boost * 220;
@@ -88,13 +99,18 @@ function draw() {
   translate(width / 2, height / 2);
   rotate(-rot * 0.35);
   setStrokeByBoost(boost);
-  strokeWeight(2);
+  strokeWeight(strokeW);
 
-  const ring = 140 + boost * 110;
-  for (let i = 0; i < spectrum.length; i += 2) {
+  // v5 추가: ring를 약간 안쪽으로, 선 길이를 더 길게 해서 가시성 강화
+  const ring = 120 + boost * 90;
+
+  // v5 추가: 라인을 더 촘촘히 (i += 2 -> i += 1)
+  for (let i = 0; i < spectrum.length; i += 1) {
     const a = map(i, 0, spectrum.length, 0, TWO_PI);
     const mag = spectrum[i] / 255;
-    const len = ring + mag * (70 + boost * 160);
+
+    // v5 추가: len 스케일 상향(선이 더 눈에 띄게)
+    const len = ring + mag * (140 + boost * 260);
 
     const x1 = cos(a) * ring;
     const y1 = sin(a) * ring;
@@ -157,12 +173,14 @@ function setFillByBoost(boost) {
 }
 
 function setStrokeByBoost(boost) {
+  // v5 추가: 선/사각형이 사라지지 않게 최소 알파를 조금 올린다
   if (useHSB) {
     const h = (frameCount * 0.8 + 120 + boost * 160) % 360;
-    stroke(h, 80, 95, 70);
+    const a = 80 + boost * 20;
+    stroke(h, 80, 95, a);
   } else {
     const v = 120 + boost * 120;
-    stroke(v, v, 255, 180);
+    stroke(v, v, 255, 200);
   }
 }
 
